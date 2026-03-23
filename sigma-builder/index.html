@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#080808">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Sigma Rule Builder — NOXXA</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="shortcut icon" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav id="nav">
+  <div class="nav-inner">
+    <a href="https://noxxa7705.github.io" class="nav-logo">NOXXA</a>
+    <div class="nav-center">
+      <span class="nav-tool-label">sigma rule builder</span>
+    </div>
+    <ul class="nav-links">
+      <li><a href="https://github.com/noxxa7705/sigma-builder" target="_blank">github →</a></li>
+    </ul>
+  </div>
+</nav>
+
+<div id="app" @keydown.escape.window="hideCtxMenu">
+
+  <!-- Toast -->
+  <div class="toast" :class="{ visible: notification }">{{ notification }}</div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-inner">
+      <div class="toolbar-left">
+        <span class="mono label-xs">SIGMA RULE BUILDER</span>
+        <div class="lint-badge" :class="lint.valid ? 'ok' : 'err'">
+          <span v-if="lint.valid">✓ valid</span>
+          <span v-else>{{ lint.errors.length }} error{{ lint.errors.length !== 1 ? 's' : '' }}</span>
+        </div>
+      </div>
+      <!-- Tabs in toolbar center -->
+      <div class="toolbar-tabs">
+        <button v-for="t in ['metadata','logsource','detection','tags','preview']" :key="t"
+                class="tab-btn" :class="{ active: activeTab === t }" @click="activeTab = t">
+          <span class="tab-dot" :class="{
+            'dot-ok':   tabStatus(t) === 'ok',
+            'dot-warn': tabStatus(t) === 'warn',
+            'dot-err':  tabStatus(t) === 'err'
+          }"></span>
+          {{ t }}
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn-tool" @click="showBrowser = true">⊞ community</button>
+        <button class="btn-tool" @click="showTemplates = true">⊙ templates</button>
+        <button class="btn-tool" @click="showLibrary = true">⊕ library</button>
+        <button class="btn-tool" data-keep @click="libSave" title="Save current rule to local library">⊙ save</button>
+        <button class="btn-tool" @click="showImport = true">↑ import</button>
+        <button class="btn-tool" @click="copyShareLink" title="Copy shareable link to this rule">⎋ share</button>
+        <button class="btn-tool" data-keep @click="openWizard">+ new</button>
+        <button class="btn-tool" data-keep @click="showSettings = true">⚙</button>
+        <button class="btn-tool accent" @click="exportRule">↓ export .yml</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="builder-layout" :class="{ 'matrix-mode': activeTab === 'tags' }">
+
+    <!-- LEFT: form panel -->
+    <div class="form-panel">
+
+      <!-- ══ METADATA ══════════════════════════════════════════════════════ -->
+      <div v-show="activeTab === 'metadata'" class="tab-content">
+
+        <div class="field-group">
+          <label>Title <span class="req">*</span> <button class="btn-tool btn-ai small" @click="aiGenerate('title')" :class="{loading: aiState.title.loading}" :title="aiAvailable ? 'AI: suggest titles' : 'Configure AI endpoint in Settings'">suggest title</button></label>
+          <input v-model="rule.title" class="inp" placeholder="e.g. Suspicious PowerShell Encoded Command" />
+        </div>
+
+        <div class="ai-inline-panel ai-chips-panel" v-if="aiState.title.visible || aiState.title.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('title') }}</span>
+            <button class="btn-icon" @click="aiDismiss('title')">×</button>
+          </div>
+          <div v-if="aiState.title.loading" class="ai-streaming-text streaming">{{ aiState.title.text || aiLoadingLabel('title') }}</div>
+          <div v-else-if="aiState.title.error" class="ai-error">{{ aiState.title.error }}</div>
+          <div v-else class="ai-fp-list">
+            <div v-for="(t, i) in aiState.title.suggestions" :key="i" class="ai-fp-item">
+              <span>{{ t }}</span>
+              <button class="btn-tool small" @click="acceptTitle(t); aiDismiss('title')">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label>Rule ID</label>
+            <div class="inp-row">
+              <input v-model="rule.id" class="inp mono-inp" readonly />
+              <button class="btn-icon" @click="regenId" title="New UUID">⟳</button>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>Status</label>
+            <select v-model="rule.status" class="inp">
+              <option v-for="s in data.statusOptions" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Level <span class="req">*</span></label>
+            <select v-model="rule.level" class="inp" :class="`level-${rule.level}`">
+              <option v-for="l in data.levelOptions" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Description <button class="btn-tool btn-ai small" @click="aiGenerate('describe')" :class="{loading: aiState.describe.loading}" :title="aiAvailable ? 'AI: suggest descriptions' : 'Configure AI endpoint in Settings'">suggest description</button></label>
+          <textarea v-model="rule.description" class="inp" rows="3"
+                    placeholder="What does this rule detect and why is it suspicious?"></textarea>
+        </div>
+
+        <div class="ai-inline-panel ai-chips-panel" v-if="aiState.describe.visible || aiState.describe.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('describe') }}</span>
+            <button class="btn-icon" @click="aiDismiss('describe')">×</button>
+          </div>
+          <div v-if="aiState.describe.loading" class="ai-streaming-text streaming">{{ aiState.describe.text || aiLoadingLabel('describe') }}</div>
+          <div v-else-if="aiState.describe.error" class="ai-error">{{ aiState.describe.error }}</div>
+          <div v-else class="ai-fp-list">
+            <div v-for="(d, i) in aiState.describe.suggestions" :key="i" class="ai-fp-item ai-desc-item">
+              <span>{{ d }}</span>
+              <button class="btn-tool small" @click="acceptDescription(d); aiDismiss('describe')">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label>Author</label>
+            <input v-model="rule.author" class="inp" placeholder="your name / handle" />
+          </div>
+          <div class="field-group">
+            <label>Date</label>
+            <input v-model="rule.date" type="date" class="inp" />
+          </div>
+          <div class="field-group">
+            <label>Modified</label>
+            <input v-model="rule.modified" type="date" class="inp" />
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>References</label>
+          <div v-for="(r, i) in rule.references" :key="i" class="list-row">
+            <input v-model="rule.references[i]" class="inp" placeholder="https://..." />
+            <button class="btn-icon danger" @click="removeListItem(rule.references, i)">×</button>
+          </div>
+          <button class="btn-add" @click="addListItem(rule.references)">+ add reference</button>
+        </div>
+
+        <div class="field-group">
+          <label>False Positives <button class="btn-tool btn-ai small" @click="aiGenerate('falsepositives')" :class="{loading: aiState.falsepositives.loading}" :title="aiAvailable ? 'AI: brainstorm false positives' : 'Configure AI endpoint in Settings'">suggest false positives</button></label>
+          <div v-for="(fp, i) in rule.falsepositives" :key="i" class="list-row">
+            <input v-model="rule.falsepositives[i]" class="inp" placeholder="Legitimate admin activity..." />
+            <button class="btn-icon danger" @click="removeListItem(rule.falsepositives, i)">×</button>
+          </div>
+          <button class="btn-add" @click="addListItem(rule.falsepositives)">+ add false positive</button>
+        </div>
+
+        <div class="ai-inline-panel" v-if="aiState.falsepositives.visible || aiState.falsepositives.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('falsepositives') }}</span>
+            <button class="btn-icon" @click="aiDismiss('falsepositives')">×</button>
+          </div>
+          <div v-if="aiState.falsepositives.loading" class="ai-streaming-text streaming">{{ aiState.falsepositives.text || aiLoadingLabel('falsepositives') }}</div>
+          <div v-else-if="aiState.falsepositives.error" class="ai-error">{{ aiState.falsepositives.error }}</div>
+          <div v-else class="ai-fp-list">
+            <div v-for="(fp, i) in aiState.falsepositives.suggestions" :key="i" class="ai-fp-item">
+              <span>{{ fp }}</span>
+              <button class="btn-tool small" @click="acceptFP(fp, i)">Add</button>
+            </div>
+          </div>
+          <div class="ai-actions" v-if="!aiState.falsepositives.loading && aiState.falsepositives.suggestions.length">
+            <button class="btn-tool small accent" @click="acceptAllFPs">Accept all</button>
+            <button class="btn-tool small" @click="aiDismiss('falsepositives')">Dismiss</button>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Output Fields <span class="hint">(optional)</span></label>
+          <div v-for="(f, i) in rule.fields" :key="i" class="list-row">
+            <input v-model="rule.fields[i]" class="inp mono-inp"
+                   :placeholder="fieldSuggestions[0] || 'FieldName'" />
+            <button class="btn-icon danger" @click="removeListItem(rule.fields, i)">×</button>
+          </div>
+          <button class="btn-add" @click="addListItem(rule.fields)">+ add field</button>
+        </div>
+
+      </div>
+
+      <!-- ══ LOGSOURCE ════════════════════════════════════════════════════ -->
+      <div v-show="activeTab === 'logsource'" class="tab-content">
+
+        <div class="field-group">
+          <label>Quick Preset</label>
+          <select v-model="selectedPreset" class="inp">
+            <option value="">— select a preset —</option>
+            <optgroup v-for="(group, gname) in logsourceGroups" :key="gname" :label="gname">
+              <option v-for="ls in group" :key="ls.id" :value="ls.id">{{ ls.label }}</option>
+            </optgroup>
+          </select>
+          <p class="hint-text">Presets fill the fields below and suggest detection field names.</p>
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="field-row">
+          <div class="field-group">
+            <label>Category</label>
+            <input v-model="rule.logsource.category" class="inp mono-inp" placeholder="process_creation" />
+          </div>
+          <div class="field-group">
+            <label>Product</label>
+            <input v-model="rule.logsource.product" class="inp mono-inp" placeholder="windows" />
+          </div>
+          <div class="field-group">
+            <label>Service</label>
+            <input v-model="rule.logsource.service" class="inp mono-inp" placeholder="sysmon" />
+          </div>
+        </div>
+
+        <div v-if="fieldSuggestions.length" class="field-suggestions">
+          <p class="label-xs mono">Available fields for this logsource:</p>
+          <div class="field-chips">
+            <span v-for="f in fieldSuggestions" :key="f" class="chip mono">{{ f }}</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══ DETECTION ════════════════════════════════════════════════════ -->
+      <div v-show="activeTab === 'detection'" class="tab-content">
+
+        <div v-for="group in rule.detection.groups" :key="group.id" class="detection-group">
+          <div class="group-header">
+            <input v-model="group.name" class="inp group-name-inp mono-inp" placeholder="selection" />
+            <div class="group-type-toggle">
+              <button class="btn-type" :class="{ active: group.type === 'fields' }"
+                      @click="group.type = 'fields'">fields</button>
+              <button class="btn-type" :class="{ active: group.type === 'keywords' }"
+                      @click="group.type = 'keywords'">keywords</button>
+            </div>
+            <button class="btn-icon danger" @click="removeGroup(group.id)"
+                    :disabled="rule.detection.groups.length <= 1">×</button>
+          </div>
+
+          <!-- Field mode -->
+          <div v-if="group.type === 'fields'" class="group-fields">
+            <div v-for="field in group.fields" :key="field.id" class="field-entry">
+              <div class="field-entry-top">
+                <div class="field-name-wrap">
+                  <input v-model="field.field" class="inp mono-inp field-name-inp"
+                         placeholder="FieldName" list="field-suggestions-list" />
+                  <datalist id="field-suggestions-list">
+                    <option v-for="f in fieldSuggestions" :key="f" :value="f" />
+                  </datalist>
+                </div>
+                <select v-model="field.modifier" class="inp modifier-sel">
+                  <option v-for="m in data.modifiers" :key="m.value" :value="m.value">{{ m.label }}</option>
+                </select>
+                <button class="btn-icon danger" @click="removeField(group, field.id)"
+                        :disabled="group.fields.length <= 1">×</button>
+              </div>
+              <div class="field-values">
+                <div v-for="(val, vi) in field.values" :key="vi" class="list-row value-row">
+                  <input v-model="field.values[vi]" class="inp mono-inp" placeholder="value" />
+                  <button class="btn-icon danger" @click="removeValue(field, vi)"
+                          :disabled="field.values.length <= 1">×</button>
+                </div>
+                <button class="btn-add small" @click="addValue(field)">+ value</button>
+              </div>
+            </div>
+            <button class="btn-add" @click="addField(group)">+ add field</button>
+          </div>
+
+          <!-- Keyword mode -->
+          <div v-if="group.type === 'keywords'" class="group-keywords">
+            <p class="hint-text">Keywords match against full log event text (no field binding).</p>
+            <div v-for="(kw, ki) in group.keywords" :key="ki" class="list-row">
+              <input v-model="group.keywords[ki]" class="inp mono-inp" placeholder="keyword" />
+              <button class="btn-icon danger" @click="removeKeyword(group, ki)"
+                      :disabled="group.keywords.length <= 1">×</button>
+            </div>
+            <button class="btn-add" @click="addKeyword(group)">+ add keyword</button>
+          </div>
+        </div>
+
+        <div class="detection-ai-bar">
+          <button class="btn-add group-add" @click="addGroup">+ add selection group</button>
+          <button class="btn-tool btn-ai small" @click="aiGenerate('detection')" :class="{loading: aiState.detection.loading}" :title="aiAvailable ? 'AI: suggest detection fields' : 'Configure AI endpoint in Settings'">suggest detection</button>
+        </div>
+
+        <!-- AI Detection suggestions panel -->
+        <div class="ai-inline-panel ai-detection-panel" v-if="aiState.detection.visible || aiState.detection.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('detection') }}</span>
+            <button class="btn-icon" @click="aiDismiss('detection')">×</button>
+          </div>
+          <div v-if="aiState.detection.loading" class="ai-streaming-text streaming">{{ aiState.detection.text || aiLoadingLabel('detection') }}</div>
+          <div v-else-if="aiState.detection.error" class="ai-error">{{ aiState.detection.error }}</div>
+          <template v-else-if="aiState.detection.suggestions.length">
+            <p class="ai-detection-summary" v-if="aiState.detection.summary">{{ aiState.detection.summary }}</p>
+
+            <!-- Suggested groups -->
+            <div v-if="aiState.detection.suggestions[0]?.groups?.length" class="ai-det-section">
+              <span class="mono label-xs ai-det-section-label">SELECTION GROUPS</span>
+              <div v-for="(g, gi) in aiState.detection.suggestions[0].groups" :key="gi" class="ai-det-group">
+                <div class="ai-det-group-header">
+                  <code class="ai-det-name">{{ g.name }}</code>
+                  <span class="ai-det-rationale">{{ g.rationale }}</span>
+                  <button class="btn-tool small" @click="acceptDetectionGroup(g, false, gi)">+ add group</button>
+                </div>
+                <div class="ai-det-fields">
+                  <div v-for="(f, fi) in g.fields" :key="fi" class="ai-det-field">
+                    <code>{{ f.field }}<span v-if="f.modifier">|{{ f.modifier }}</span></code>
+                    <span class="ai-det-values">{{ Array.isArray(f.values) ? f.values.join(', ') : f.values }}</span>
+                    <span class="ai-det-note" v-if="f.note">— {{ f.note }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Suggested filters -->
+            <div v-if="aiState.detection.suggestions[0]?.filters?.length" class="ai-det-section">
+              <span class="mono label-xs ai-det-section-label">FILTER GROUPS</span>
+              <div v-for="(f, fi) in aiState.detection.suggestions[0].filters" :key="fi" class="ai-det-group">
+                <div class="ai-det-group-header">
+                  <code class="ai-det-name">{{ f.name }}</code>
+                  <span class="ai-det-rationale">{{ f.rationale }}</span>
+                  <button class="btn-tool small" @click="acceptDetectionGroup(f, true, fi)">+ add filter</button>
+                </div>
+                <div class="ai-det-fields">
+                  <div v-for="(field, ffi) in f.fields" :key="ffi" class="ai-det-field">
+                    <code>{{ field.field }}<span v-if="field.modifier">|{{ field.modifier }}</span></code>
+                    <span class="ai-det-values">{{ Array.isArray(field.values) ? field.values.join(', ') : field.values }}</span>
+                    <span class="ai-det-note" v-if="field.note">— {{ field.note }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Condition suggestion -->
+            <div v-if="aiState.detection.suggestions[0]?.condition_suggestion" class="ai-det-condition">
+              <span class="mono label-xs">SUGGESTED CONDITION</span>
+              <code>{{ aiState.detection.suggestions[0].condition_suggestion }}</code>
+              <button class="btn-tool small" @click="acceptDetectionCondition(aiState.detection.suggestions[0].condition_suggestion)">Use</button>
+            </div>
+
+            <!-- Legend -->
+            <div class="annot-legend" style="margin-top:0.5rem">
+              <span class="legend-label mono label-xs">LEGEND</span>
+              <span class="legend-item" style="color:#4ade80">■ selection group</span>
+              <span class="legend-item" style="color:#facc15">■ filter group</span>
+              <span class="legend-item" style="color:#60a5fa">■ condition</span>
+            </div>
+
+            <div class="ai-actions">
+              <button class="btn-tool small accent" @click="acceptAllDetection">Accept all</button>
+              <button class="btn-tool small" @click="aiDismiss('detection')">Dismiss</button>
+            </div>
+          </template>
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="field-group">
+          <label>Condition <span class="req">*</span></label>
+          <div class="condition-templates">
+            <button v-for="ct in data.conditionTemplates" :key="ct.value"
+                    class="btn-cond-tpl"
+                    :class="{ active: rule.detection.condition === ct.value }"
+                    @click="setConditionTemplate(ct.value)">
+              {{ ct.label }}
+            </button>
+          </div>
+          <input v-model="rule.detection.condition" class="inp mono-inp" placeholder="selection" />
+        </div>
+
+        <div class="field-group">
+          <label>Timeframe <span class="hint">(optional)</span></label>
+          <input v-model="rule.detection.timeframe" class="inp mono-inp"
+                 placeholder="e.g. 15m, 1h, 30s" />
+        </div>
+
+      </div>
+
+      <!-- ══ TAGS ══════════════════════════════════════════════════════════ -->
+      <div v-show="activeTab === 'tags'" class="tab-content tags-tab">
+
+        <!-- Custom tags list (keep as-is) -->
+        <div class="field-group">
+          <label>Rule Tags</label>
+          <div v-for="(tag, i) in rule.tags" :key="i" class="list-row">
+            <input v-model="rule.tags[i]" class="inp mono-inp" placeholder="attack.t1059.001" />
+            <button class="btn-icon danger" @click="removeTag(i)">×</button>
+          </div>
+          <button class="btn-add" @click="addCustomTag">+ add tag</button>
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="ai-tag-suggest" v-if="aiState.tags.visible || aiState.tags.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('tags') }}</span>
+            <button class="btn-icon" @click="aiDismiss('tags')">×</button>
+          </div>
+          <div v-if="aiState.tags.loading" class="ai-streaming-text">{{ aiState.tags.text || aiLoadingLabel('tags') }}</div>
+          <div v-else-if="aiState.tags.error" class="ai-error">{{ aiState.tags.error }}</div>
+          <div v-else class="ai-tag-chips">
+            <button v-for="t in aiState.tags.suggestions" :key="t"
+                    class="ai-tag-chip" :class="{ accepted: hasAiTag(t) }"
+                    @click="acceptAiTag(t)">
+              {{ t }} {{ hasAiTag(t) ? '✓' : '+' }}
+            </button>
+          </div>
+          <div class="ai-actions" v-if="!aiState.tags.loading && aiState.tags.suggestions.length">
+            <button class="btn-tool small accent" @click="acceptAllAiTags">Accept all</button>
+            <button class="btn-tool small" @click="aiDismiss('tags')">Dismiss</button>
+          </div>
+        </div>
+
+        <!-- Matrix header -->
+        <div class="matrix-header">
+          <span class="label-xs mono">MITRE ATT&amp;CK ENTERPRISE — v14.1</span>
+          <div class="matrix-controls">
+            <input v-model="matrixSearch" class="inp matrix-search-inp" placeholder="Search techniques…" />
+            <button class="btn-tool small" @click="matrixShowSubs = !matrixShowSubs">
+              {{ matrixShowSubs ? '▾ hide subs' : '▸ show subs' }}
+            </button>
+            <button class="btn-tool small" @click="clearAllTags" v-if="selectedTechIds.size > 0">
+              clear ({{ selectedTechIds.size }})
+            </button>
+            <button class="btn-tool small btn-ai" @click="aiGenerate('tags')" :class="{loading: aiState.tags.loading}">suggest tags</button>
+          </div>
+        </div>
+
+        <!-- The matrix itself -->
+        <div class="attack-matrix-wrap">
+          <div class="attack-matrix">
+            <!-- Tactic header row -->
+            <div class="matrix-tactic-header" v-for="tac in matrixTactics" :key="tac.id">
+              <span class="tactic-label">{{ tac.label }}</span>
+              <span class="tactic-count">{{ tac.visibleCount }}</span>
+            </div>
+            <!-- Technique columns -->
+            <div class="matrix-column" v-for="tac in matrixTactics" :key="'col-'+tac.id">
+              <template v-for="tech in tac.techniques" :key="tech.id">
+                <!-- Parent technique cell -->
+                <div class="matrix-cell"
+                     :class="{
+                       selected: isSelected(tech.id),
+                       'has-subs': tech.subs.length > 0,
+                       'sub-expanded': expandedTechs.has(tech.id),
+                       'search-match': matrixSearch && techMatchesSearch(tech),
+                       'search-miss':  matrixSearch && !techMatchesSearch(tech) && !anySubMatches(tech),
+                     }"
+                     @click.stop="toggleTechCell(tech)"
+                     @contextmenu="ctxMatrixCell($event, tech, false)">
+                  <span class="cell-id">{{ tech.id }}</span>
+                  <span class="cell-name">{{ tech.name }}</span>
+                  <span v-if="tech.subs.length" class="cell-sub-toggle"
+                        @click.stop="toggleExpand(tech.id)">
+                    {{ expandedTechs.has(tech.id) ? '▾' : '▸' }} {{ tech.subs.length }}
+                  </span>
+                </div>
+                <!-- Sub-technique cells (shown when expanded or show-subs mode) -->
+                <template v-if="matrixShowSubs || expandedTechs.has(tech.id)">
+                  <div v-for="sub in tech.subs" :key="sub.id"
+                       class="matrix-cell matrix-sub-cell"
+                       :class="{
+                         selected: isSelected(sub.id),
+                         'search-match': matrixSearch && subMatchesSearch(sub),
+                         'search-miss':  matrixSearch && !subMatchesSearch(sub),
+                       }"
+                       @click="toggleSubCell(sub, tech)"
+                       @contextmenu="ctxMatrixCell($event, sub, true)">
+                    <span class="cell-id">{{ sub.id }}</span>
+                    <span class="cell-name">{{ sub.name }}</span>
+                  </div>
+                </template>
+              </template>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══ PREVIEW ═══════════════════════════════════════════════════════ -->
+      <div v-show="activeTab === 'preview'" class="tab-content preview-tab">
+
+        <div v-if="lint.errors.length || lint.warnings.length" class="lint-box">
+          <div v-for="e in lint.errors"   :key="e" class="lint-item lint-error">✕ {{ e }}</div>
+          <div v-for="w in lint.warnings" :key="w" class="lint-item lint-warning">⚠ {{ w }}</div>
+        </div>
+        <div v-else class="lint-box lint-clean">✓ Rule looks good</div>
+
+        <div class="preview-actions">
+          <button class="btn-tool" @click="copyYaml">{{ copied ? '✓ copied!' : '⎘ copy' }}</button>
+          <button class="btn-tool accent" @click="exportRule">↓ export .yml</button>
+          <button class="btn-tool btn-ai" @click="aiGenerate('explain')" :class="{loading: aiState.explain.loading}">explain rule</button>
+          <button class="btn-tool btn-ai" @click="aiGenerate('review')" :class="{loading: aiState.review.loading}">review rule</button>
+        </div>
+
+        <!-- AI Explain panel -->
+        <div class="ai-inline-panel ai-explain-panel" v-if="aiState.explain.visible || aiState.explain.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('explain') }}</span>
+            <button class="btn-icon" @click="aiDismiss('explain')">×</button>
+          </div>
+          <div class="ai-markdown-text" :class="{ streaming: aiState.explain.loading }" v-html="renderMarkdown(aiState.explain.text || (aiState.explain.loading ? aiLoadingLabel('explain') : ''))"></div>
+          <div v-if="aiState.explain.error" class="ai-error">{{ aiState.explain.error }}</div>
+        </div>
+
+        <!-- AI Review panel with annotated YAML -->
+        <div class="ai-inline-panel ai-review-panel" v-if="aiState.review.visible || aiState.review.loading">
+          <div class="ai-panel-header">
+            <span class="mono label-xs">{{ aiPanelHeading('review') }}</span>
+            <span v-if="aiState.review.score" class="review-score" :class="scoreClass(aiState.review.score)">{{ aiState.review.score }}/10</span>
+            <button class="btn-icon" @click="aiDismiss('review')">×</button>
+          </div>
+          <div v-if="aiState.review.loading" class="ai-streaming-text streaming">{{ aiState.review.rawText || aiLoadingLabel('review') }}</div>
+          <div v-else-if="aiState.review.error" class="ai-error">{{ aiState.review.error }}</div>
+          <template v-else>
+            <p class="review-summary" v-if="aiState.review.summary">{{ aiState.review.summary }}</p>
+            <!-- Annotated YAML -->
+            <pre class="yaml-annotated"><span
+              v-for="(seg, i) in annotatedYamlSegments" :key="i"
+              class="yaml-seg"
+              :class="seg.severity ? `annot-${seg.severity}` : ''"
+              :title="seg.note || ''"
+            >{{ seg.text }}</span></pre>
+            <!-- Legend -->
+            <div class="annot-legend" v-if="aiState.review.annotations.length">
+              <span class="legend-label mono label-xs">LEGEND</span>
+              <span class="legend-item annot-error">■ error</span>
+              <span class="legend-item annot-warning">■ warning</span>
+              <span class="legend-item annot-info">■ info</span>
+              <span class="legend-item annot-good">■ good</span>
+            </div>
+            <!-- Annotation list -->
+            <div class="annot-list">
+              <div v-for="(a, i) in aiState.review.annotations" :key="i" class="annot-item" :class="`annot-item-${a.severity}`">
+                <span class="annot-badge" :class="`annot-${a.severity}`">{{ a.severity }}</span>
+                <code class="annot-target">{{ a.target }}</code>
+                <span class="annot-note">{{ a.note }}</span>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <pre class="yaml-preview" @contextmenu="ctxYamlPreview($event)">{{ yamlOutput }}</pre>
+
+        <!-- ── Converter ─────────────────────────────────────────── -->
+        <div class="converter-panel">
+          <div class="converter-header">
+            <span class="mono label-xs">QUERY CONVERTER</span>
+            <span class="hint-text" style="font-size:0.7rem">Best-effort — always review before use</span>
+          </div>
+          <!-- Target selector -->
+          <div class="converter-tabs">
+            <button v-for="t in ['spl','kql','eql']" :key="t"
+                    class="btn-conv-tab" :class="{ active: converterTarget === t }"
+                    @click="converterTarget = t">{{ t.toUpperCase() }}</button>
+          </div>
+          <!-- Output -->
+          <div class="converter-output-wrap">
+            <pre class="converter-output">{{ converterOutput }}</pre>
+            <button class="btn-copy-conv" @click="copyConverterOutput" title="Copy to clipboard">copy</button>
+          </div>
+          <!-- Note if present -->
+          <p v-if="converterNote" class="converter-note">⚠ {{ converterNote }}</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT: live preview -->
+    <div class="preview-panel">
+      <div class="preview-panel-header">
+        <span class="mono label-xs">LIVE PREVIEW</span>
+        <div class="preview-panel-actions">
+          <button class="btn-tool small" @click="copyYaml">{{ copied ? '✓' : '⎘ copy' }}</button>
+          <button class="btn-tool small accent" @click="exportRule">↓ export</button>
+        </div>
+      </div>
+      <div v-if="lint.errors.length" class="lint-inline">
+        <span v-for="e in lint.errors" :key="e" class="lint-err-inline">✕ {{ e }}</span>
+      </div>
+      <pre class="yaml-live" @contextmenu="ctxYamlPreview($event)">{{ yamlOutput }}</pre>
+    </div>
+
+  </div><!-- /.builder-layout -->
+
+  <!-- ══ MODAL: COMMUNITY BROWSER ══════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="showBrowser" @click.self="showBrowser = false">
+    <div class="modal modal-browser">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <span class="modal-title">SigmaHQ Community Rules</span>
+          <a href="https://github.com/SigmaHQ/sigma" target="_blank" class="modal-link">
+            github.com/SigmaHQ/sigma →
+          </a>
+        </div>
+        <button class="btn-icon" @click="showBrowser = false">×</button>
+      </div>
+
+      <div class="browser-layout">
+        <!-- Left sidebar: categories -->
+        <div class="browser-sidebar">
+          <div v-for="(cats, grp) in communityGroups" :key="grp" class="browser-group">
+            <div class="browser-group-label mono label-xs">{{ grp }}</div>
+            <button v-for="cat in cats" :key="cat.id"
+                    class="browser-cat-btn"
+                    :class="{ active: activeCatId === cat.id }"
+                    @click="selectCategory(cat)">
+              {{ cat.label.split(' — ')[1] || cat.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: file list -->
+        <div class="browser-files">
+          <div v-if="!activeCatId" class="browser-empty">
+            <p>← Select a category to browse community rules</p>
+            <p class="hint-text">Loads rule list from github.com/SigmaHQ/sigma on demand.</p>
+            <p class="hint-text">Add a GitHub token in <button class="btn-inline-link" @click="showBrowser=false; showSettings=true">Settings ⚙</button> to avoid rate limits.</p>
+          </div>
+
+          <template v-else>
+            <div class="browser-files-header">
+              <input v-model="browserSearch" class="inp browser-search"
+                     placeholder="Filter rules…" />
+              <span class="mono label-xs" v-if="catFiles.length">
+                {{ filteredFiles.length }} / {{ catFiles.length }} rules
+              </span>
+            </div>
+
+            <div v-if="catLoading" class="browser-status">loading rules…</div>
+            <div v-else-if="catError" class="browser-status err">{{ catError }}</div>
+            <div v-else-if="ruleError" class="browser-status err">{{ ruleError }}</div>
+
+            <div class="browser-file-list">
+              <button v-for="file in filteredFiles" :key="file.path"
+                      class="browser-file-btn"
+                      :disabled="ruleLoading"
+                      @click="loadCommunityRule(file)"
+                      @contextmenu.stop="ctxBrowserFile($event, file)">
+                <span class="browser-file-name">{{ file.name }}</span>
+                <span class="browser-file-arrow">→</span>
+              </button>
+              <div v-if="!catLoading && filteredFiles.length === 0 && catFiles.length > 0"
+                   class="browser-status">
+                No rules match "{{ browserSearch }}"
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: LOCAL TEMPLATES ════════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="showTemplates" @click.self="showTemplates = false">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Pinned Templates</span>
+        <button class="btn-icon" @click="showTemplates = false">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text">Quick-start templates served from this repo.</p>
+        <p v-if="templateError" class="error-text">{{ templateError }}</p>
+        <div class="tpl-list">
+          <button v-for="t in data.pinnedTemplates" :key="t.id"
+                  class="tpl-card" :disabled="templateLoading"
+                  @click="loadPinnedTemplate(t)">
+            <span class="tpl-name">{{ t.label }}</span>
+            <span class="tpl-arrow">→</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: IMPORT ════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="showImport" @click.self="showImport = false">
+    <div class="modal modal-import">
+      <div class="modal-header">
+        <span class="modal-title">Import Existing Rule</span>
+        <button class="btn-icon" @click="showImport = false">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text">Paste a Sigma rule YAML to edit it.</p>
+        <p v-if="importError" class="error-text">{{ importError }}</p>
+        <textarea v-model="importText" class="inp yaml-import-area"
+                  placeholder="title: ...&#10;logsource:&#10;  ..."></textarea>
+        <div class="modal-footer">
+          <button class="btn-tool" @click="showImport = false">cancel</button>
+          <button class="btn-tool accent" @click="doImport">import →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: SETTINGS ══════════════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="showSettings" @click.self="showSettings = false">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <span class="modal-title">Settings</span>
+        <button class="btn-icon" @click="showSettings = false">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label>GitHub Personal Access Token</label>
+          <input v-model="githubToken" type="password" class="inp mono-inp"
+                 placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" />
+          <p class="hint-text">
+            Optional. Raises GitHub API rate limit from 60 to 5,000 req/hr.
+            Only needs <strong>public_repo</strong> read scope (or no scope — public repos are readable unauthenticated).
+            Stored in <code>localStorage</code> only — never sent anywhere except api.github.com.
+          </p>
+          <a href="https://github.com/settings/tokens/new?description=sigma-builder&scopes=" 
+             target="_blank" class="hint-link">Generate a token →</a>
+        </div>
+        <!-- AI / LM section header -->
+        <div class="settings-section-head">
+          <span>AI (optional)</span>
+          <span class="hint">LM Studio · Ollama · OpenAI · any OpenAI-compatible</span>
+        </div>
+
+        <!-- Endpoint + live status badge -->
+        <div class="field-group">
+          <label>AI Endpoint URL <span class="hint">(OpenAI-compatible)</span></label>
+          <div class="endpoint-row">
+            <input v-model="aiEndpoint" class="inp mono-inp endpoint-inp"
+                   placeholder="http://localhost:1234/v1"
+                   @input="onEndpointInput" />
+            <span class="ai-live-badge" :class="aiLiveBadgeClass">{{ aiLiveBadgeText }}</span>
+          </div>
+          <p class="hint-text">Works with LM Studio, Ollama, OpenAI, or any OpenAI-compatible server. Leave blank to disable AI.</p>
+        </div>
+
+        <!-- Model picker — dropdown after models are fetched, text input as fallback -->
+        <div class="field-group">
+          <label>Model <span class="hint">(pick one to use for AI suggestions)</span></label>
+          <div class="model-row">
+            <select v-if="aiAvailableModels.length" v-model="aiModel" class="inp" @change="onAiSettingChange">
+              <option value="">— pick a model —</option>
+              <option v-for="m in aiAvailableModels" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <input v-else v-model="aiModel" class="inp mono-inp" placeholder="model-name" @input="onAiSettingChange" />
+            <button class="btn-tool small" @click="refreshModels" :disabled="aiLiveStatus === 'testing'" title="Re-fetch model list">↺</button>
+          </div>
+          <div v-if="aiModel" class="hint" style="margin-top:0.5rem">
+            <span v-if="aiModelRecommendation">{{ aiModelRecommendation }} · </span>
+            <strong>For JSON tasks:</strong> prefer non-thinking models or reduce max_tokens.
+          </div>
+        </div>
+
+        <!-- API Key -->
+        <div class="field-group">
+          <label>API Key <span class="hint">(optional — leave blank for local)</span></label>
+          <input v-model="aiApiKey" type="password" class="inp mono-inp" placeholder="sk-… or blank for LM Studio/Ollama" @input="onAiSettingChange" />
+        </div>
+
+        <!-- Advanced settings (collapsible) -->
+        <div class="field-group">
+          <button class="btn-inline-link adv-toggle" @click="aiShowAdvanced = !aiShowAdvanced">
+            {{ aiShowAdvanced ? '▾' : '▸' }} Advanced settings
+          </button>
+          <div v-if="aiShowAdvanced" class="adv-settings">
+            <div class="adv-row">
+              <label>Temperature <span class="hint">{{ aiAdvTemp }}</span></label>
+              <input type="range" v-model.number="aiAdvTemp" min="0" max="1" step="0.05" class="range-inp" @change="onAiSettingChange" />
+            </div>
+            <div class="adv-row">
+              <label>Max tokens</label>
+              <input type="number" v-model.number="aiAdvMaxTokens" min="256" max="8192" step="128" class="inp inp-sm" @change="onAiSettingChange" />
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-tool accent" @click="showSettings = false">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: NEW RULE WIZARD ══════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="wizard.open" @click.self="wizard.open = false">
+    <div class="modal modal-wizard">
+      <div class="modal-header">
+        <span class="modal-title">✦ New Rule Wizard</span>
+        <div class="wizard-steps">
+          <span v-for="i in 4" :key="i" class="wizard-step-dot"
+                :class="{ active: wizard.step === i, done: wizard.step > i }">
+            {{ wizard.step > i ? '●' : wizard.step === i ? '●' : '○' }}
+          </span>
+        </div>
+        <button class="btn-icon" @click="wizard.open = false">×</button>
+      </div>
+      <div class="modal-body wizard-body">
+
+        <!-- Step 1: Scenario -->
+        <div v-if="wizard.step === 1">
+          <p class="hint-text" style="margin-bottom:1rem">What kind of detection are you building?</p>
+          <div class="wizard-scenario-grid">
+            <button v-for="sc in wizardScenarios" :key="sc.id"
+                    class="wizard-scenario-card"
+                    :class="{ active: wizard.scenario === sc.id }"
+                    @click="wizard.scenario = sc.id">
+              <span class="wizard-sc-icon">{{ sc.icon }}</span>
+              <span class="wizard-sc-label">{{ sc.label }}</span>
+              <span class="wizard-sc-desc">{{ sc.desc }}</span>
+            </button>
+          </div>
+
+          <div v-if="aiAvailable" class="ai-inline-panel" style="margin-top:1rem">
+            <div class="ai-panel-header">
+              <span class="mono label-xs">BRAINSTORM STARTER RULE</span>
+            </div>
+            <textarea v-model="wizard.brainstormPrompt" class="inp" rows="3"
+                      placeholder="Describe the detection idea, behavior, or hypothesis you want to turn into a Sigma draft."></textarea>
+            <div class="ai-actions">
+              <button class="btn-tool btn-ai small" :class="{ loading: wizard.brainstormLoading }" @click="wizardBrainstorm">
+                brainstorm draft
+              </button>
+            </div>
+            <div v-if="wizard.brainstormLoading" class="ai-streaming-text streaming">{{ wizard.brainstormText || 'Generating draft…' }}</div>
+            <div v-else-if="wizard.brainstormPlan" class="ai-fp-list">
+              <div class="ai-fp-item ai-desc-item">
+                <span>
+                  <strong>{{ wizard.brainstormPlan.title || 'Untitled draft' }}</strong><br>
+                  <span class="hint">{{ wizard.brainstormPlan.description }}</span>
+                </span>
+                <button class="btn-tool small accent" @click="applyWizardBrainstorm(wizard.brainstormPlan)">use</button>
+              </div>
+              <div class="hint" v-if="wizard.brainstormPlan.scenario || wizard.brainstormPlan.logsource_id">
+                Scenario: {{ wizard.brainstormPlan.scenario || 'custom' }}
+                <span v-if="wizard.brainstormPlan.logsource_id"> · Preset: {{ wizard.brainstormPlan.logsource_id }}</span>
+              </div>
+            </div>
+            <div v-else-if="wizard.brainstormText" class="ai-error">{{ wizard.brainstormText }}</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Basics -->
+        <div v-if="wizard.step === 2">
+          <div class="field-group" style="margin-bottom:1rem">
+            <label>Title <span class="req">*</span></label>
+            <input v-model="wizard.title" class="inp" ref="wizardTitleRef"
+                   placeholder="e.g. Suspicious PowerShell Encoded Command" />
+          </div>
+          <div class="field-group" style="margin-bottom:1rem">
+            <label>Level</label>
+            <div class="wizard-level-pills">
+              <button v-for="lv in ['informational','low','medium','high','critical']" :key="lv"
+                      class="wizard-level-pill" :class="[`pill-${lv}`, { active: wizard.level === lv }]"
+                      @click="wizard.level = lv">{{ lv }}</button>
+            </div>
+          </div>
+          <div class="field-group" style="margin-bottom:1rem">
+            <label>Author</label>
+            <input v-model="wizard.author" class="inp" placeholder="your name / handle" />
+          </div>
+          <div class="field-group">
+            <label>
+              Description
+              <button v-if="aiAvailable" class="btn-tool btn-ai small"
+                      :class="{ loading: wizard.aiDescLoading }"
+                      @click="wizardAiDescribe"
+                      title="Generate a draft description">suggest description</button>
+            </label>
+            <textarea v-model="wizard.description" class="inp" rows="3"
+                      placeholder="Optional — what does this rule detect?"></textarea>
+            <div v-if="wizard.aiDescLoading" class="ai-streaming-text streaming" style="margin-top:0.35rem">{{ wizard.aiDescText || 'Generating description…' }}</div>
+            <div v-else-if="wizard.aiDescText && !wizard.description" class="ai-inline-panel" style="margin-top:0.35rem">
+              <div class="ai-streaming-text">{{ wizard.aiDescText }}</div>
+              <div class="ai-actions">
+                <button class="btn-tool small accent" @click="wizard.description = wizard.aiDescText; wizard.aiDescText = ''">Accept</button>
+                <button class="btn-tool small" @click="wizard.aiDescText = ''">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Logsource -->
+        <div v-if="wizard.step === 3">
+          <p class="hint-text" style="margin-bottom:0.75rem">Choose a logsource preset, or skip to configure manually.</p>
+          <div v-if="aiAvailable" style="margin-bottom:0.75rem">
+            <button class="btn-tool btn-ai" :class="{ loading: wizard.aiLsLoading }" @click="wizardAiLogsource">
+              suggest logsource
+            </button>
+            <span v-if="wizard.aiLsText" class="hint" style="margin-left:0.5rem">{{ wizard.aiLsText }}</span>
+          </div>
+          <div class="wizard-ls-grid">
+            <button v-for="ls in wizardFilteredLogsources" :key="ls.id"
+                    class="wizard-ls-card"
+                    :class="{ active: wizard.logsourceId === ls.id }"
+                    @click="wizard.logsourceId = ls.id">
+              <span class="wizard-ls-label">{{ ls.label }}</span>
+              <span class="wizard-ls-meta mono">
+                <span v-if="ls.category">cat: {{ ls.category }}</span>
+                <span v-if="ls.product">  product: {{ ls.product }}</span>
+                <span v-if="ls.service">  svc: {{ ls.service }}</span>
+              </span>
+            </button>
+            <button class="wizard-ls-card" :class="{ active: wizard.logsourceId === '' }" @click="wizard.logsourceId = ''">
+              <span class="wizard-ls-label">⊘ Skip / manual</span>
+              <span class="wizard-ls-meta">Configure logsource manually in editor</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 4: Review -->
+        <div v-if="wizard.step === 4">
+          <p class="hint-text" style="margin-bottom:0.75rem">Review the rule that will be created:</p>
+          <pre class="wizard-yaml-preview">{{ wizardPreviewYaml }}</pre>
+        </div>
+
+      </div>
+      <div class="modal-footer wizard-footer">
+        <button class="btn-tool" @click="wizard.open = false">cancel</button>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-tool" v-if="wizard.step > 1" @click="wizard.step--">← back</button>
+          <button class="btn-tool" v-if="wizard.step < 4"
+                  :disabled="wizard.step === 1 && !wizard.scenario"
+                  @click="wizardNext">next →</button>
+          <button class="btn-tool accent" v-if="wizard.step === 4" @click="wizardStart">▶ start editing</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ MODAL: RULE LIBRARY ══════════════════════════════════════════════ -->
+  <div class="modal-overlay" v-if="showLibrary" @click.self="showLibrary = false">
+    <div class="modal modal-library">
+      <div class="modal-header">
+        <div class="modal-title-row">
+          <span class="modal-title">⊕ Rule Library</span>
+          <span class="modal-link">{{ libraryEntries.length }} saved</span>
+        </div>
+        <button class="btn-icon" @click="showLibrary = false">×</button>
+      </div>
+      <div class="modal-body" style="padding-top:0.75rem">
+        <!-- Search -->
+        <input v-model="librarySearch" class="inp" placeholder="Search rules…" style="margin-bottom:0.75rem" />
+        <!-- Empty state -->
+        <div v-if="!libraryEntries.length" class="lib-empty">
+          <p>No saved rules yet.</p>
+          <p class="hint-text">Click <strong>⊙ save</strong> in the toolbar to save the current rule.</p>
+        </div>
+        <!-- No search results -->
+        <div v-else-if="!libraryFiltered.length" class="lib-empty">
+          <p class="hint-text">No rules match your search.</p>
+        </div>
+        <!-- Rule list -->
+        <div v-else class="lib-list">
+          <div v-for="entry in libraryFiltered" :key="entry.id" class="lib-entry">
+            <div class="lib-entry-header" @click="libLoad(entry)">
+              <span class="lib-level-badge" :style="{ '--lc': levelColor(entry.level) }">{{ entry.level }}</span>
+              <span class="lib-title">{{ entry.title || 'Untitled' }}</span>
+            </div>
+            <div class="lib-entry-meta">
+              <span class="hint">{{ entry.logsource?.product || entry.logsource?.category || '—' }}</span>
+              <span class="hint">{{ entry.tags.slice(0,2).join(' · ') }}</span>
+              <span class="hint lib-date">{{ formatRelativeTime(entry.savedAt) }}</span>
+            </div>
+            <div class="lib-entry-actions">
+              <button class="btn-tool small" @click="libLoad(entry)">load</button>
+              <button class="btn-tool small" @click="libDuplicate(entry)">duplicate</button>
+              <button class="btn-tool small danger" @click="libDelete(entry.id)">delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CONTEXT MENU ══ -->
+  <Teleport to="body">
+    <div v-if="ctxMenu.visible" class="ctx-overlay" @click="hideCtxMenu" @contextmenu.prevent="hideCtxMenu"></div>
+    <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }">
+      <template v-for="(item, i) in ctxMenu.items" :key="i">
+        <div v-if="item.separator" class="ctx-separator"></div>
+        <button v-else class="ctx-item" :class="{ disabled: item.disabled }"
+                @click="!item.disabled && (item.action(), hideCtxMenu())">
+          {{ item.label }}
+        </button>
+      </template>
+    </div>
+  </Teleport>
+
+</div><!-- /#app -->
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="mono">sigma rule builder · <a href="https://noxxa7705.github.io">NOXXA</a></span>
+    <span class="mono text-muted">static · no backend · community rules via <a href="https://github.com/SigmaHQ/sigma" target="_blank">SigmaHQ/sigma</a></span>
+  </div>
+</footer>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="js/ai-panel-mixin.js"></script>
+<script src="js/attack-matrix.js"></script>
+<script src="js/sigma-data.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/converter.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
